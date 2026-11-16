@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
@@ -32,7 +30,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ahmedmunna.memories.ui.screens.AboutScreen
 import com.ahmedmunna.memories.ui.screens.AlbumsScreen
-import com.ahmedmunna.memories.ui.screens.ComingSoonScreen
 import com.ahmedmunna.memories.ui.screens.MediaBrowser
 import com.ahmedmunna.memories.ui.screens.PermissionScreen
 import com.ahmedmunna.memories.ui.screens.SettingsScreen
@@ -41,9 +38,7 @@ import com.ahmedmunna.memories.ui.screens.ViewerScreen
 private enum class Tab(val label: String, val icon: ImageVector) {
     PHOTOS("Photos", Icons.Filled.PhotoLibrary),
     ALBUMS("Albums", Icons.Filled.Collections),
-    MEMORIES("Memories", Icons.Filled.AutoAwesome),
     SEARCH("Search", Icons.Filled.Search),
-    CLOUD("Cloud", Icons.Filled.Cloud),
 }
 
 private enum class Overlay { SETTINGS, ABOUT }
@@ -131,21 +126,7 @@ fun MainScreen(vm: GalleryViewModel, onRequestPermission: () -> Unit) {
                         }
                     }
 
-                Tab.MEMORIES -> ComingSoonScreen(
-                    Tab.MEMORIES.icon, "Memories", "Planned for Phase 4",
-                    "Automatically generated memories, highlights and slideshows will appear here.",
-                    content,
-                )
-                Tab.SEARCH -> ComingSoonScreen(
-                    Tab.SEARCH.icon, "Search", "Planned for Phase 4",
-                    "Search by file name, date, album and on-device content will appear here.",
-                    content,
-                )
-                Tab.CLOUD -> ComingSoonScreen(
-                    Tab.CLOUD.icon, "Cloud", "Planned for Phase 2",
-                    "Sign-in, backup and sync need a Firebase project. Nothing is uploaded from this version.",
-                    content,
-                )
+                Tab.SEARCH -> SearchScreen(state, vm, content)
             }
         }
 
