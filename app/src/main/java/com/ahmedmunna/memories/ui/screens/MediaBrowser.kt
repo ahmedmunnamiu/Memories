@@ -170,6 +170,7 @@ fun MediaBrowser(
                     else vm.openViewer(visible, visible.indexOfFirst { it.id == item.id }.coerceAtLeast(0))
                 },
                 onLongClick = { item -> vm.toggleSelect(item.id) },
+                contentPadding = PaddingValues(bottom = 120.dp),
                 modifier = Modifier.fillMaxSize(),
             )
         }
