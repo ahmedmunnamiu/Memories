@@ -17,6 +17,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import com.ahmedmunna.memories.ui.components.GlassNavBar
 import com.ahmedmunna.memories.ui.components.GlassNavItem
 import androidx.compose.foundation.layout.Box
