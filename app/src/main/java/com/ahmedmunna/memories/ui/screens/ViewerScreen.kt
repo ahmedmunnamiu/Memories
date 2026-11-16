@@ -6,11 +6,17 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.MediaStore
 import android.widget.Toast
+import android.app.Activity
+import android.content.ContextWrapper
+import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -52,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -66,11 +73,15 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.exifinterface.media.ExifInterface
 import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.common.util.UnstableApi
@@ -84,6 +95,8 @@ import com.ahmedmunna.memories.util.MediaActions
 import com.ahmedmunna.memories.util.formatBytes
 import com.ahmedmunna.memories.util.formatDuration
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
@@ -105,6 +118,11 @@ fun ViewerScreen(session: ViewerSession, onClose: () -> Unit) {
 
     BackHandler(onBack = onClose)
     LaunchedEffect(pagerState.currentPage) { zoomed = false }
+
+    // Status and navigation bars hide together with the viewer controls, and come back on exit.
+    val view = LocalView.current
+    LaunchedEffect(chromeVisible) { setSystemBarsVisible(view, chromeVisible) }
+    DisposableEffect(Unit) { onDispose { setSystemBarsVisible(view, true) } }
 
     val trashLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) onClose()
@@ -210,6 +228,16 @@ fun ViewerScreen(session: ViewerSession, onClose: () -> Unit) {
     }
 }
 
+private fun setSystemBarsVisible(view: View, visible: Boolean) {
+    var ctx = view.context
+    while (ctx is ContextWrapper && ctx !is Activity) ctx = ctx.baseContext
+    val window = (ctx as? Activity)?.window ?: return
+    val controller = WindowCompat.getInsetsController(window, view)
+    controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    if (visible) controller.show(WindowInsetsCompat.Type.systemBars())
+    else controller.hide(WindowInsetsCompat.Type.systemBars())
+}
+
 /**
  * Pinch / double-tap zoom, pan while zoomed, and swipe-down-to-close at 1x.
  * Only consumes pointer events when it is actually using them, so the pager can still swipe sideways.
@@ -228,6 +256,21 @@ private fun ZoomableImage(
     var size by remember { mutableStateOf(IntSize.Zero) }
     val slop = LocalViewConfiguration.current.touchSlop
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val animJob = remember { arrayOfNulls<Job>(1) }
+
+    /** Smoothly moves scale and pan to the target (double-tap, snap back to 1x). */
+    fun animateTo(targetScale: Float, targetOffset: Offset) {
+        animJob[0]?.cancel()
+        val s0 = scale
+        val o0 = offset
+        animJob[0] = scope.launch {
+            animate(0f, 1f, animationSpec = tween(260, easing = FastOutSlowInEasing)) { f, _ ->
+                scale = s0 + (targetScale - s0) * f
+                offset = o0 + (targetOffset - o0) * f
+            }
+        }
+    }
 
     fun clamp(o: Offset, s: Float): Offset {
         val maxX = size.width * (s - 1f) / 2f
@@ -247,12 +290,14 @@ private fun ZoomableImage(
                     onTap = { onTap() },
                     onDoubleTap = { tap ->
                         if (scale > 1.01f) {
-                            scale = 1f; offset = Offset.Zero
+                            animateTo(1f, Offset.Zero)
                         } else {
-                            scale = 2.5f
-                            offset = clamp(
-                                Offset(size.width / 2f - tap.x, size.height / 2f - tap.y) * (2.5f - 1f),
+                            animateTo(
                                 2.5f,
+                                clamp(
+                                    Offset(size.width / 2f - tap.x, size.height / 2f - tap.y) * (2.5f - 1f),
+                                    2.5f,
+                                ),
                             )
                         }
                     },
@@ -261,6 +306,7 @@ private fun ZoomableImage(
             .pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    animJob[0]?.cancel() // a new touch interrupts any running zoom animation
                     var dismissing = false
                     do {
                         val event = awaitPointerEvent()
@@ -290,13 +336,18 @@ private fun ZoomableImage(
                         }
                     } while (event.changes.any { it.pressed })
 
-                    if (scale < 1.05f) { scale = 1f; offset = Offset.Zero }
+                    if (scale < 1.05f && (scale != 1f || offset != Offset.Zero)) animateTo(1f, Offset.Zero)
                     if (dismissing) {
                         if (dragY > size.height * 0.18f) {
                             onClose()
                         } else {
-                            dragY = 0f
-                            onDragFraction(0f)
+                            val from = dragY
+                            scope.launch {
+                                animate(from, 0f, animationSpec = tween(200)) { v, _ ->
+                                    dragY = v
+                                    onDragFraction((v / size.height.coerceAtLeast(1)).coerceIn(0f, 1f))
+                                }
+                            }
                         }
                     }
                 }
