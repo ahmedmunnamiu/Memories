@@ -167,6 +167,7 @@ fun SearchScreen(state: GalleryUiState, vm: GalleryViewModel, modifier: Modifier
                     onColumnsChange = vm::setColumns,
                     onClick = open,
                     onLongClick = open,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 120.dp),
                     modifier = Modifier.fillMaxSize(),
                 )
             }
